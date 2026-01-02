@@ -108,8 +108,18 @@ static void write_char_at(int x, int y, char c, uint8_t color)
     }
 }
 
+static void clear_memory(void *ptr, int size)
+{
+    char *p = (char *)ptr;
+    for (int i = 0; i < size; i++)
+    {
+        p[i] = 0;
+    }
+}
+
 void ide_open_file(const char *filename)
 {
+
     str_copy(editor.filename, filename);
     editor.line_count = 1;
     editor.cursor_line = 0;
@@ -120,58 +130,94 @@ void ide_open_file(const char *filename)
     editor.shift_pressed = false;
     editor.caps_lock = false;
 
+    for (int i = 0; i < MAX_LINES; i++)
+    {
+        for (int j = 0; j < MAX_LINE_LEN; j++)
+        {
+            editor.lines[i][j] = '\0';
+        }
+    }
+
     File *file = fs_find_file(filename);
 
     if (file && file->type == 'F')
     {
-
         char *content = file->content;
         int size = file->size;
+        int line = 0;
+        int col = 0;
         int pos = 0;
-        int line_idx = 0;
 
-        for (int i = 0; i < MAX_LINES; i++)
+        int last_valid_line = 0;
+        int last_valid_col = 0;
+
+        while (pos < size && line < MAX_LINES)
         {
-            editor.lines[i][0] = '\0';
-        }
+            char c = content[pos];
 
-        while (pos < size && line_idx < MAX_LINES - 1)
-        {
-            int line_start = pos;
-            int line_len = 0;
-
-            while (pos < size && content[pos] != '\n' && line_len < MAX_LINE_LEN - 1)
+            if (c == '\n')
             {
-                pos++;
-                line_len++;
-            }
 
-            int j = 0;
-            for (int i = line_start; i < line_start + line_len && j < MAX_LINE_LEN - 1; i++)
-            {
-                editor.lines[line_idx][j++] = content[i];
-            }
-            editor.lines[line_idx][j] = '\0';
+                if (col < MAX_LINE_LEN)
+                {
+                    editor.lines[line][col] = '\0';
+                }
 
-            line_idx++;
+                if (col > 0)
+                {
+                    last_valid_line = line;
+                    last_valid_col = col;
+                }
 
-            if (pos < size && content[pos] == '\n')
-            {
+                line++;
+                col = 0;
                 pos++;
             }
+            else if (c == '\r')
+            {
+
+                pos++;
+            }
+            else if (c == '\0')
+            {
+
+                break;
+            }
+            else
+            {
+
+                if (col < MAX_LINE_LEN - 1)
+                {
+                    editor.lines[line][col] = c;
+                    col++;
+                    last_valid_line = line;
+                    last_valid_col = col;
+                }
+                pos++;
+            }
         }
 
-        editor.line_count = line_idx;
-        if (editor.line_count == 0)
+        if (col > 0 && line < MAX_LINES)
         {
-            editor.lines[0][0] = '\0';
-            editor.line_count = 1;
+            editor.lines[line][col] = '\0';
+            last_valid_line = line;
+            last_valid_col = col;
+            line++;
         }
-    }
-    else
-    {
 
-        editor.lines[0][0] = '\0';
+        if (line > 0)
+        {
+            editor.line_count = line;
+        }
+
+        editor.cursor_line = last_valid_line;
+        editor.cursor_col = last_valid_col;
+
+        if (editor.line_count == 1 && editor.lines[0][0] == '\0')
+        {
+            editor.cursor_line = 0;
+            editor.cursor_col = 0;
+        }
     }
 }
 
