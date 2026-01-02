@@ -48,6 +48,31 @@ void fs_init(void)
     user->parent = home;
     home->child = user;
 
+    File *hello = create_file("Hello.T", 'F');
+    if (hello)
+    {
+
+        const char *hello_content =
+            "schar name = \"\"\n"
+            "write(\"Type your name: \")\n"
+            "input(name)\n"
+            "line()\n"
+            "write(\"Hello! \", name)\n";
+
+        int i = 0;
+        while (hello_content[i] && i < 1023)
+        {
+            hello->content[i] = hello_content[i];
+            i++;
+        }
+        hello->content[i] = '\0';
+        hello->size = i;
+
+        hello->parent = user;
+        hello->next = user->child;
+        user->child = hello;
+    }
+
     current_dir = user;
 }
 

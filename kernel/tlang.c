@@ -6,14 +6,11 @@
 #include "stddef.h"
 #include <stdbool.h>
 
-/* DECLARAÇÕES DAS FUNÇÕES DO KERNEL */
 bool keyboard_available(void);
 char keyboard_getchar(void);
 
-/* ========== VARIÁVEIS GLOBAIS ========== */
 static TLANG_Interpreter interpreter;
 
-/* ========== FUNÇÕES AUXILIARES ========== */
 static void tlang_error(const char *msg)
 {
     terminal_writestring("[TLANG ERROR] ");
@@ -91,7 +88,6 @@ static char *simple_strstr(const char *haystack, const char *needle)
     return NULL;
 }
 
-/* ========== FUNÇÕES DE VARIÁVEIS ========== */
 static TLANG_Variable *find_variable(const char *name)
 {
     for (int i = 0; i < interpreter.var_count; i++)
@@ -134,7 +130,6 @@ static TLANG_Variable *create_variable(const char *name, TLANG_Type type)
     return var;
 }
 
-/* ========== PARSER DE EXPRESSÕES ========== */
 static int parse_int_expression(const char **ptr)
 {
     skip_whitespace(ptr);
@@ -230,7 +225,30 @@ static bool parse_bool_literal(const char **ptr)
     return false;
 }
 
-/* ========== AVALIAÇÃO DE EXPRESSÕES MATEMÁTICAS ========== */
+static void process_line_command(const char **ptr)
+{
+    skip_whitespace(ptr);
+
+    if (**ptr != '(')
+    {
+        tlang_error("Expected '(' after line");
+        return;
+    }
+
+    (*ptr)++;
+    skip_whitespace(ptr);
+
+    if (**ptr != ')')
+    {
+        tlang_error("Expected ')' in line()");
+        return;
+    }
+
+    (*ptr)++;
+
+    terminal_writestring("\n");
+}
+
 static int evaluate_math_expression(const char **ptr)
 {
     skip_whitespace(ptr);
@@ -328,7 +346,6 @@ static int evaluate_math_expression(const char **ptr)
     return result;
 }
 
-/* ========== AVALIAÇÃO DE CONDIÇÕES ========== */
 static bool evaluate_condition(const char **ptr)
 {
     skip_whitespace(ptr);
@@ -445,7 +462,6 @@ static bool evaluate_condition(const char **ptr)
     }
 }
 
-/* ========== PROCESSAMENTO DE COMANDOS ========== */
 static void process_int_declaration(const char **ptr)
 {
     skip_whitespace(ptr);
@@ -585,8 +601,11 @@ static void process_write_command(const char **ptr)
 
     while (**ptr && **ptr != ')')
     {
+        skip_whitespace(ptr);
+
         if (**ptr == '"')
         {
+
             char *str = parse_string_literal(ptr);
             if (str)
             {
@@ -595,9 +614,11 @@ static void process_write_command(const char **ptr)
         }
         else if (is_alpha(**ptr))
         {
+
+            const char *start = *ptr;
+
             char var_name[32];
             int i = 0;
-
             while (is_alnum(**ptr) && i < 31)
             {
                 var_name[i++] = **ptr;
@@ -605,55 +626,93 @@ static void process_write_command(const char **ptr)
             }
             var_name[i] = '\0';
 
-            TLANG_Variable *var = find_variable(var_name);
-            if (var)
+            skip_whitespace(ptr);
+
+            if (**ptr == '+' || **ptr == '-' || **ptr == '*' || **ptr == '/')
             {
-                switch (var->type)
-                {
-                case TLANG_INT:
-                {
-                    char num_str[16];
-                    itoa(var->value.int_value, num_str, 10);
-                    terminal_writestring(num_str);
-                    break;
-                }
-                case TLANG_SCHAR:
-                    terminal_writestring(var->value.str_value);
-                    break;
-                case TLANG_BOOL:
-                    terminal_writestring(var->value.bool_value ? "true" : "false");
-                    break;
-                default:
-                    break;
-                }
-            }
-            else
-            {
-                *ptr -= i;
+
+                *ptr = start;
                 int result = evaluate_math_expression(ptr);
 
                 char num_str[16];
                 itoa(result, num_str, 10);
                 terminal_writestring(num_str);
             }
+            else
+            {
+
+                *ptr = start;
+
+                i = 0;
+                while (is_alnum(**ptr) && i < 31)
+                {
+                    var_name[i++] = **ptr;
+                    (*ptr)++;
+                }
+                var_name[i] = '\0';
+
+                TLANG_Variable *var = find_variable(var_name);
+                if (var)
+                {
+                    switch (var->type)
+                    {
+                    case TLANG_INT:
+                    {
+                        char num_str[16];
+                        itoa(var->value.int_value, num_str, 10);
+                        terminal_writestring(num_str);
+                        break;
+                    }
+                    case TLANG_SCHAR:
+                        terminal_writestring(var->value.str_value);
+                        break;
+                    case TLANG_BOOL:
+                        terminal_writestring(var->value.bool_value ? "true" : "false");
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                else
+                {
+                    char error_msg[64];
+                    strcpy(error_msg, "Undefined variable: ");
+                    strcat(error_msg, var_name);
+                    tlang_error(error_msg);
+                }
+            }
         }
-        else if (**ptr == ',' || is_whitespace(**ptr))
+        else if (is_digit(**ptr) || **ptr == '-')
         {
-            (*ptr)++;
-            skip_whitespace(ptr);
-        }
-        else if (is_digit(**ptr) || **ptr == '+' || **ptr == '-' ||
-                 **ptr == '*' || **ptr == '/')
-        {
+
             int result = evaluate_math_expression(ptr);
 
             char num_str[16];
             itoa(result, num_str, 10);
             terminal_writestring(num_str);
         }
+        else if (**ptr == ',')
+        {
+
+            (*ptr)++;
+            skip_whitespace(ptr);
+
+            continue;
+        }
+        else if (is_whitespace(**ptr))
+        {
+
+            (*ptr)++;
+        }
         else
         {
-            terminal_putchar(**ptr);
+
+            char error_msg[40];
+            strcpy(error_msg, "Unexpected character in write: '");
+            error_msg[31] = **ptr;
+            error_msg[32] = '\'';
+            error_msg[33] = '\0';
+            tlang_error(error_msg);
             (*ptr)++;
         }
     }
@@ -916,7 +975,6 @@ static void process_for_loop(const char **ptr)
     }
 }
 
-/* ========== PROCESSAMENTO DE UMA LINHA ========== */
 void tlang_run_line(const char *line)
 {
     interpreter.line_number++;
@@ -1004,6 +1062,14 @@ void tlang_run_line(const char *line)
             in_if_block = false;
         }
     }
+    else if (strncmp(ptr, "line(", 5) == 0)
+    {
+        if (!in_if_block || if_condition_met)
+        {
+            ptr += 4;
+            process_line_command(&ptr);
+        }
+    }
     else
     {
         char var_name[32];
@@ -1064,7 +1130,6 @@ void tlang_run_line(const char *line)
     }
 }
 
-/* ========== EXECUTAR ARQUIVO .T ========== */
 void tlang_run_file(const char *filename)
 {
     File *file = fs_find_file(filename);
@@ -1124,7 +1189,6 @@ void tlang_run_file(const char *filename)
     }
 }
 
-/* ========== INICIALIZAÇÃO ========== */
 void tlang_init(void)
 {
     interpreter.var_count = 0;
@@ -1132,13 +1196,11 @@ void tlang_init(void)
     interpreter.had_error = false;
 }
 
-/* ========== LIMPEZA ========== */
 void tlang_cleanup(void)
 {
     interpreter.var_count = 0;
 }
 
-/* ========== COMANDOS DO KERNEL ========== */
 void cmd_tlang(const char *args)
 {
     if (!args || !*args)
