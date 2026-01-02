@@ -13,6 +13,7 @@
 
 #include "../T84_OS/home/app/ttest.h"
 #include "../T84_OS/home/app/4IDE.h"
+#include "../T84_OS/home/app/cstat.h"
 
 bool usedDailyPhrase = false;
 
@@ -1449,6 +1450,10 @@ void kernel_main(void)
             terminal_writeall("\n");
 
             usedDailyPhrase = true;
+        }
+        else if (strcmp(cmd, "cstat") == 0)
+        {
+            cmd_cstat(arg);
         }
         else if (cmd[0] != '\0')
         {

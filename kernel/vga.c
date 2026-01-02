@@ -1,5 +1,6 @@
 #include "vga.h"
 #include "string_utils.h"
+#include "kernel.h"
 #include <stdarg.h>
 
 size_t terminal_row = 0;
@@ -19,16 +20,7 @@ void terminal_initialize(void)
 
 void terminal_clear(void)
 {
-    for (size_t y = 0; y < VGA_HEIGHT; y++)
-    {
-        for (size_t x = 0; x < VGA_WIDTH; x++)
-        {
-            const size_t index = y * VGA_WIDTH + x;
-            terminal_buffer[index] = vga_entry(' ', terminal_color);
-        }
-    }
-    terminal_row = 0;
-    terminal_column = 0;
+    cmd_clear(1);
 }
 
 void terminal_setcolor(uint8_t color)

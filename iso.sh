@@ -27,6 +27,7 @@ gcc -m32 -ffreestanding -O2 -c kernel/ramfs.c -o build/ramfs.o -I./kernel -nostd
 gcc -m32 -ffreestanding -O2 -c kernel/misc.c -o build/misc.o -I./kernel -nostdlib -fno-builtin
 gcc -m32 -ffreestanding -O2 -c T84_OS/home/app/4IDE.c -o build/apps/4IDE.o -I./kernel -nostdlib -fno-builtin
 gcc -m32 -ffreestanding -O2 -c kernel/tlang.c -o build/tlang.o -I./kernel -nostdlib -fno-builtin
+gcc -m32 -ffreestanding -O2 -c T84_OS/home/app/cstat.c -o build/apps/cstat.o -I./kernel -nostdlib -fno-builtin
 
 ld -m elf_i386 \
   -T linker.ld \
@@ -49,7 +50,8 @@ ld -m elf_i386 \
   build/ramfs.o \
   build/misc.o \
   build/apps/4IDE.o \
-  build/tlang.o
+  build/tlang.o \
+  build/apps/cstat.o
 
 cp build/kernel.elf isodir/boot/
 
