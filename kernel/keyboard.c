@@ -22,14 +22,14 @@ static const char keymap_shift[128] = {
 
 static bool shift_pressed = false;
 
-static inline uint8_t inb(uint16_t port)
+uint8_t inb(uint16_t port)
 {
     uint8_t result;
     __asm__ volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
     return result;
 }
 
-static inline void outb(uint16_t port, uint8_t value)
+void outb(uint16_t port, uint8_t value)
 {
     __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -46,21 +46,18 @@ bool keyboard_available(void)
 
 uint8_t keyboard_get_scancode(void)
 {
-    /* Esperar até ter dado disponível */
     while (!keyboard_available())
         ;
-    
-    /* Ler scancode diretamente da porta 0x60 */
+
     uint8_t scancode;
     __asm__ volatile("inb $0x60, %0" : "=a"(scancode));
-    
+
     return scancode;
 }
 
-
 char keyboard_getchar(void)
 {
-    static bool arrow_mode = false;
+    static bool got_e0 = false;
 
     while (!keyboard_available())
     {
@@ -71,17 +68,29 @@ char keyboard_getchar(void)
     if (scancode & 0x80)
     {
         uint8_t key = scancode & 0x7F;
+
         if (key == 0x2A || key == 0x36)
         {
             shift_pressed = false;
         }
-        arrow_mode = false;
+
+        if (got_e0)
+        {
+            got_e0 = false;
+        }
+
         return 0;
     }
 
-    if (arrow_mode)
+    if (scancode == 0xE0)
     {
-        arrow_mode = false;
+        got_e0 = true;
+        return 0;
+    }
+
+    if (got_e0)
+    {
+        got_e0 = false;
 
         switch (scancode)
         {
@@ -93,13 +102,9 @@ char keyboard_getchar(void)
             return 0x13;
         case 0x4D:
             return 0x14;
+        default:
+            return 0;
         }
-    }
-
-    if (scancode == 0xE0)
-    {
-        arrow_mode = true;
-        return 0;
     }
 
     if (scancode == 0x2A || scancode == 0x36)

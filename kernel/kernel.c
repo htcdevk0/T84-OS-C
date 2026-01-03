@@ -15,7 +15,22 @@
 #include "../T84_OS/home/app/4IDE.h"
 #include "../T84_OS/home/app/cstat.h"
 
+#define HISTORY_SIZE 10
+
+static char command_history[HISTORY_SIZE][256];
+static int history_count = 0;
+static int history_index = -1;
+static char current_line[256];
+static bool shift_pressed = false;
+
+char input[256];
+int pos = 0;
+
 bool usedDailyPhrase = false;
+
+static bool show_cursor = true;
+static int cursor_blink_counter = 0;
+#define CURSOR_BLINK_INTERVAL 500000
 
 void cmd_echo(const char *args)
 {
@@ -190,7 +205,6 @@ void cmd_help(void)
     terminal_writestring("exit, quit          - Show exit message\n");
     terminal_writestring("shutdown 0          - Shutdown kernel\n");
     terminal_writestring("run (NOTE: Only for examples [run examples/avaliable examples])\n");
-    terminal_writestring("\nUse ARROW KEYS to move cursor (#)\n");
     terminal_writestring("Hold SHIFT for uppercase letters\n");
 }
 
@@ -1250,9 +1264,315 @@ void kernel_main(void)
     while (1)
     {
         terminal_setcolor(text_color);
-        terminal_writestring("T84> ");
 
-        keyboard_getline(input, sizeof(input));
+        int pos = 0;
+        input[0] = '\0';
+        history_index = -1;
+        current_line[0] = '\0';
+        shift_pressed = false;
+
+        terminal_writestring("T84> _");
+
+        while (1)
+        {
+            if (keyboard_available())
+            {
+                uint8_t scancode = inb(0x60);
+
+                static bool got_e0 = false;
+
+                if (scancode == 0xE0)
+                {
+                    got_e0 = true;
+                    continue;
+                }
+
+                if (scancode == 0x0F)
+                {
+                    if (pos + 4 < 255)
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        for (int i = 0; i < 4; i++)
+                        {
+                            input[pos++] = ' ';
+                            terminal_putchar(' ');
+                        }
+
+                        terminal_putchar('_');
+                    }
+                    continue;
+                }
+
+                if (got_e0 && scancode == 0x48 && !(scancode & 0x80) && history_count > 0)
+                {
+                    got_e0 = false;
+
+                    if (history_index == -1 && pos > 0)
+                    {
+                        strcpy(current_line, input);
+                    }
+
+                    if (history_index < history_count - 1)
+                    {
+                        history_index++;
+                    }
+
+                    terminal_putchar(8);
+                    terminal_putchar(' ');
+                    terminal_putchar(8);
+
+                    for (int i = 0; i < pos; i++)
+                    {
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+                    }
+
+                    strcpy(input, command_history[history_index]);
+                    pos = strlen(input);
+
+                    if (pos > 0)
+                    {
+                        terminal_writestring(input);
+                    }
+
+                    terminal_putchar('_');
+                    continue;
+                }
+
+                if (got_e0 && scancode == 0x50 && !(scancode & 0x80))
+                {
+                    got_e0 = false;
+
+                    if (history_index >= 0)
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        for (int i = 0; i < pos; i++)
+                        {
+                            terminal_putchar(8);
+                            terminal_putchar(' ');
+                            terminal_putchar(8);
+                        }
+
+                        if (history_index > 0)
+                        {
+                            history_index--;
+                            strcpy(input, command_history[history_index]);
+                        }
+                        else
+                        {
+                            history_index = -1;
+                            strcpy(input, current_line);
+                        }
+
+                        pos = strlen(input);
+
+                        if (pos > 0)
+                        {
+                            terminal_writestring(input);
+                        }
+                    }
+                    else
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        for (int i = 0; i < pos; i++)
+                        {
+                            terminal_putchar(8);
+                            terminal_putchar(' ');
+                            terminal_putchar(8);
+                        }
+
+                        pos = 0;
+                        input[0] = '\0';
+                    }
+
+                    terminal_putchar('_');
+                    continue;
+                }
+                got_e0 = false;
+
+                if (scancode & 0x80)
+                {
+                    uint8_t key = scancode & 0x7F;
+
+                    if (key == 0x2A || key == 0x36)
+                    {
+                        shift_pressed = false;
+                    }
+                    continue;
+                }
+
+                if (scancode == 0x2A || scancode == 0x36)
+                {
+                    shift_pressed = true;
+                    continue;
+                }
+
+                if (scancode == 0x1C)
+                {
+                    input[pos] = '\0';
+
+                    terminal_putchar(8);
+                    terminal_putchar(' ');
+                    break;
+                }
+
+                if (scancode == 0x0E)
+                {
+                    if (pos > 0)
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        pos--;
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        terminal_putchar('_');
+                    }
+                    else
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+                        terminal_putchar('_');
+                    }
+                    continue;
+                }
+
+                char c = 0;
+
+                if (scancode >= 0x10 && scancode <= 0x1C)
+                {
+                    const char *lower = "qwertyuiop[]";
+                    const char *upper = "QWERTYUIOP{}";
+                    c = shift_pressed ? upper[scancode - 0x10] : lower[scancode - 0x10];
+                }
+                else if (scancode >= 0x1E && scancode <= 0x28)
+                {
+                    const char *lower = "asdfghjkl;'`";
+                    const char *upper = "ASDFGHJKL:\"~";
+                    c = shift_pressed ? upper[scancode - 0x1E] : lower[scancode - 0x1E];
+                }
+                else if (scancode >= 0x2C && scancode <= 0x35)
+                {
+                    const char *lower = "zxcvbnm,./";
+                    const char *upper = "ZXCVBNM<>?";
+                    c = shift_pressed ? upper[scancode - 0x2C] : lower[scancode - 0x2C];
+                }
+                else if (scancode >= 0x02 && scancode <= 0x0D)
+                {
+                    if (shift_pressed)
+                    {
+                        const char *symbols = "!@#$%^&*()_+";
+                        c = symbols[scancode - 0x02];
+                    }
+                    else
+                    {
+                        const char *numbers = "1234567890-=";
+                        c = numbers[scancode - 0x02];
+                    }
+                }
+                else if (scancode == 0x39)
+                {
+                    c = ' ';
+                }
+                else if (scancode == 0x0C)
+                {
+                    c = shift_pressed ? '_' : '-';
+                }
+                else if (scancode == 0x0D)
+                {
+                    c = shift_pressed ? '+' : '=';
+                }
+                else if (scancode == 0x1A)
+                {
+                    c = shift_pressed ? '{' : '[';
+                }
+                else if (scancode == 0x1B)
+                {
+                    c = shift_pressed ? '}' : ']';
+                }
+                else if (scancode == 0x27)
+                {
+                    c = shift_pressed ? ':' : ';';
+                }
+                else if (scancode == 0x28)
+                {
+                    c = shift_pressed ? '"' : '\'';
+                }
+                else if (scancode == 0x29)
+                {
+                    c = shift_pressed ? '~' : '`';
+                }
+                else if (scancode == 0x2B)
+                {
+                    c = shift_pressed ? '|' : '\\';
+                }
+                else if (scancode == 0x33)
+                {
+                    c = shift_pressed ? '<' : ',';
+                }
+                else if (scancode == 0x34)
+                {
+                    c = shift_pressed ? '>' : '.';
+                }
+                else if (scancode == 0x35)
+                {
+                    c = shift_pressed ? '?' : '/';
+                }
+
+                if (c != 0 && pos < 255)
+                {
+
+                    terminal_putchar(8);
+                    terminal_putchar(' ');
+                    terminal_putchar(8);
+
+                    terminal_putchar(c);
+                    input[pos++] = c;
+
+                    terminal_putchar('_');
+                }
+            }
+        }
+
+        if (pos > 0)
+        {
+            if (history_count == 0 || strcmp(command_history[0], input) != 0)
+            {
+                for (int i = HISTORY_SIZE - 1; i > 0; i--)
+                {
+                    strcpy(command_history[i], command_history[i - 1]);
+                }
+
+                strcpy(command_history[0], input);
+
+                if (history_count < HISTORY_SIZE)
+                {
+                    history_count++;
+                }
+            }
+            history_index = -1;
+        }
+
+        terminal_writestring("\n");
 
         char *cmd = input;
         char *arg = NULL;
@@ -1384,10 +1704,10 @@ void kernel_main(void)
                 terminal_writestring("\n\n");
                 load_ttest_app();
             }
-            /* Adicione esta parte: */
+
             else if (arg && strncmp(arg, "4ide ", 5) == 0)
             {
-                /* Chamar a função do 4IDE */
+
                 cmd_open_ide(arg);
             }
         }

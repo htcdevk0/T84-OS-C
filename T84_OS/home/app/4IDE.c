@@ -26,6 +26,8 @@
 #define KEY_RSHIFT 0x36
 #define KEY_CAPSLOCK 0x3A
 
+#define KEY_TAB 0x0F
+
 typedef struct
 {
     char filename[32];
@@ -558,6 +560,14 @@ void handle_scancode(uint8_t scancode)
 
     case KEY_ENTER:
         new_line();
+        draw_editor();
+        break;
+
+    case KEY_TAB:
+        for (int i = 0; i < 4; i++)
+        {
+            insert_char(' ');
+        }
         draw_editor();
         break;
 
