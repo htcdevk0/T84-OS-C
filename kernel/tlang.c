@@ -370,7 +370,6 @@ static bool evaluate_condition(const char **ptr)
 
         if (**ptr == '"')
         {
-
             char *right_str = parse_string_literal(ptr);
 
             if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
@@ -389,7 +388,6 @@ static bool evaluate_condition(const char **ptr)
         }
         else if (is_alpha(**ptr))
         {
-
             char var_name[32];
             int i = 0;
 
@@ -400,26 +398,88 @@ static bool evaluate_condition(const char **ptr)
             }
             var_name[i] = '\0';
 
-            TLANG_Variable *var = find_variable(var_name);
-            if (var && var->type == TLANG_SCHAR)
+            skip_whitespace(ptr);
+
+            char op[3] = {0};
+            int op_len = 0;
+
+            while (**ptr && (**ptr == '<' || **ptr == '>' || **ptr == '=' || **ptr == '!') && op_len < 2)
             {
-                if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
+                op[op_len++] = **ptr;
+                (*ptr)++;
+            }
+
+            skip_whitespace(ptr);
+
+            TLANG_Variable *left_var = find_variable(var_name);
+            if (!left_var)
+            {
+                tlang_error("Variable not found in condition");
+                return false;
+            }
+
+            if (left_var->type == TLANG_BOOL)
+            {
+                bool left_value = left_var->value.bool_value;
+                bool right_value = false;
+
+                skip_whitespace(ptr);
+
+                if (strncmp(*ptr, "true", 4) == 0 && !is_alnum((*ptr)[4]))
                 {
-                    return strcmp(left_str, var->value.str_value) == 0;
+                    right_value = true;
+                    *ptr += 4;
                 }
-                else if (strcmp(op, "!=") == 0)
+                else if (strncmp(*ptr, "false", 5) == 0 && !is_alnum((*ptr)[5]))
                 {
-                    return strcmp(left_str, var->value.str_value) != 0;
+                    right_value = false;
+                    *ptr += 5;
+                }
+
+                else if (is_alpha(**ptr))
+                {
+                    char right_var_name[32];
+                    int i = 0;
+                    while (is_alnum(**ptr) && i < 31)
+                    {
+                        right_var_name[i++] = **ptr;
+                        (*ptr)++;
+                    }
+                    right_var_name[i] = '\0';
+
+                    TLANG_Variable *right_var = find_variable(right_var_name);
+                    if (!right_var || right_var->type != TLANG_BOOL)
+                    {
+                        tlang_error("Right-hand side is not a bool");
+                        return false;
+                    }
+                    right_value = right_var->value.bool_value;
+                }
+
+                else if (is_digit(**ptr))
+                {
+                    int num = parse_int_expression(ptr);
+                    right_value = (num != 0);
                 }
                 else
                 {
-                    tlang_error("String comparison only supports == and !=");
+                    tlang_error("Expected true, false, bool variable, or 0/1");
                     return false;
                 }
-            }
-            else
-            {
-                tlang_error("Right side is not a string variable");
+
+                skip_whitespace(ptr);
+
+                char op[3] = {0};
+                int op_len = 0;
+                while (**ptr && (**ptr == '=' || **ptr == '!') && op_len < 2)
+                    op[op_len++] = (*ptr)++;
+
+                if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
+                    return left_value == right_value;
+                if (strcmp(op, "!=") == 0)
+                    return left_value != right_value;
+
+                tlang_error("Bool comparison only supports == and !=");
                 return false;
             }
         }
@@ -537,7 +597,96 @@ static bool evaluate_condition(const char **ptr)
             }
             else if (left_var->type == TLANG_BOOL)
             {
-                left_value = left_var->value.bool_value ? 1 : 0;
+
+                int left_value = left_var->value.bool_value ? 1 : 0;
+                int right_value = 0;
+
+                skip_whitespace(ptr);
+
+                if (strncmp(*ptr, "true", 4) == 0 && !is_alnum((*ptr)[4]))
+                {
+                    right_value = 1;
+                    *ptr += 4;
+                }
+                else if (strncmp(*ptr, "false", 5) == 0 && !is_alnum((*ptr)[5]))
+                {
+                    right_value = 0;
+                    *ptr += 5;
+                }
+
+                else if (is_digit(**ptr) || **ptr == '-')
+                {
+                    right_value = parse_int_expression(ptr);
+                }
+
+                else if (is_alpha(**ptr))
+                {
+                    char right_var_name[32];
+                    int i = 0;
+
+                    while (is_alnum(**ptr) && i < 31)
+                    {
+                        right_var_name[i++] = **ptr;
+                        (*ptr)++;
+                    }
+                    right_var_name[i] = '\0';
+
+                    TLANG_Variable *right_var = find_variable(right_var_name);
+                    if (!right_var)
+                    {
+                        tlang_error("Variable not found in condition");
+                        return false;
+                    }
+
+                    if (right_var->type == TLANG_BOOL)
+                    {
+                        right_value = right_var->value.bool_value ? 1 : 0;
+                    }
+                    else if (right_var->type == TLANG_INT)
+                    {
+                        right_value = right_var->value.int_value;
+                    }
+                    else
+                    {
+                        tlang_error("Cannot compare bool with string");
+                        return false;
+                    }
+                }
+                else
+                {
+                    tlang_error("Expected true, false, number, or variable");
+                    return false;
+                }
+
+                if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
+                {
+                    return left_value == right_value;
+                }
+                else if (strcmp(op, "!=") == 0)
+                {
+                    return left_value != right_value;
+                }
+                else if (strcmp(op, "<") == 0)
+                {
+                    return left_value < right_value;
+                }
+                else if (strcmp(op, ">") == 0)
+                {
+                    return left_value > right_value;
+                }
+                else if (strcmp(op, "<=") == 0)
+                {
+                    return left_value <= right_value;
+                }
+                else if (strcmp(op, ">=") == 0)
+                {
+                    return left_value >= right_value;
+                }
+                else
+                {
+                    tlang_error("Unknown comparison operator");
+                    return false;
+                }
             }
 
             int right_value = 0;
