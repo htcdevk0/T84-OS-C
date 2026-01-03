@@ -472,7 +472,8 @@ static bool evaluate_condition(const char **ptr)
                 char op[3] = {0};
                 int op_len = 0;
                 while (**ptr && (**ptr == '=' || **ptr == '!') && op_len < 2)
-                    op[op_len++] = (*ptr)++;
+                    op[op_len++] = **ptr;
+                    (*ptr)++;
 
                 if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
                     return left_value == right_value;

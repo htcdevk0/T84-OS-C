@@ -24,6 +24,7 @@ static char current_line[256];
 static bool shift_pressed = false;
 static bool ctrl_pressed = false;
 static bool ctrl_waiting = false;
+static bool alt_pressed = false;
 
 static char clipboard[256] = "";
 static bool clipboard_has_content = false;
@@ -1312,6 +1313,36 @@ void kernel_main(void)
                     continue;
                 }
 
+                if (scancode == 0x38)
+                {
+                    alt_pressed = true;
+                    continue;
+                }
+
+                if (scancode == (0x80 | 0x38))
+                {
+                    alt_pressed = false;
+                    continue;
+                }
+
+                if (alt_pressed && scancode == 0x1F && !(scancode & 0x80))
+                {
+                    terminal_writestring("\n Shutting down... \n");
+                    for (volatile uint32_t i = 0; i < 310000000; i++)
+                    {
+                        __asm__ volatile("nop");
+                    }
+                    shutdown_system();
+                    continue;
+                }
+
+                if (scancode == 0x1F && !(scancode & 0x80))
+                {
+                    if (alt_pressed)
+                    {
+                    }
+                }
+
                 if (got_e0 && scancode == 0x48 && !(scancode & 0x80) && history_count > 0)
                 {
                     got_e0 = false;
@@ -1817,6 +1848,10 @@ void kernel_main(void)
 
                 cmd_open_ide(arg);
             }
+        }
+        else if (strcmp(cmd, "code") == 0)
+        {
+            cmd_open_ide(arg);
         }
         else if (strcmp(cmd, "dir") == 0)
         {

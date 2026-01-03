@@ -76,7 +76,7 @@ void fs_init(void)
     File *calc = create_file("Calculator.T", 'F');
     if (calc)
     {
-        const char *calc_content = 
+        const char *calc_content =
             "# T84 Calculator - Interactive Calculator\n"
             "# Usage: tlang Calculator.T\n"
             "\n"
@@ -120,6 +120,27 @@ void fs_init(void)
         calc->parent = user;
         calc->next = user->child;
         user->child = calc;
+    }
+
+    File *benchmark = create_file("Benchmark.T", 'F');
+    if (benchmark)
+    {
+        const char *benchmark_content =
+            "# Execute this with tparse Benchmark.T !\n"
+            "FOR i = 0 TO 1000 DO &i";
+
+        int i = 0;
+        while (benchmark_content[i] && i < 1023)
+        {
+            benchmark->content[i] = benchmark_content[i];
+            i++;
+        }
+        benchmark->content[i] = '\0';
+        benchmark->size = i;
+
+        benchmark->parent = user;
+        benchmark->next = user->child;
+        user->child = benchmark;
     }
 
     current_dir = user;

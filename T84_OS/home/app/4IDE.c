@@ -5,6 +5,7 @@
 #include "../../../kernel/vga.h"
 #include "../../../kernel/kernel.h"
 #include "../../../kernel/ramfs.h"
+#include "../../../kernel/string_utils.h"
 #include <stdbool.h>
 
 #define IDE_WIDTH 70
@@ -27,6 +28,14 @@
 #define KEY_CAPSLOCK 0x3A
 
 #define KEY_TAB 0x0F
+
+#define COLOR_NORMAL 0x07
+#define COLOR_FUNCTION 0x0B
+#define COLOR_VARIABLE 0x0D
+#define COLOR_STRING 0x0A
+#define COLOR_KEYWORD 0x0E
+#define COLOR_COMMENT 0x08
+#define COLOR_OPERATION 0x0C
 
 static char ide_clipboard[256] = "";
 static bool ide_clipboard_has_content = false;
@@ -256,6 +265,133 @@ void ide_open_file(const char *filename)
     }
 }
 
+static void draw_line_with_highlight(int x, int y, const char *line, int line_num)
+{
+    int i = 0;
+    int col = x;
+    bool in_comment = false;
+
+    while (line[i] && col < 77)
+    {
+        char current_char = line[i];
+
+        if (current_char == '#')
+        {
+
+            for (int j = i; line[j] && col < 77; j++)
+            {
+                write_char_at(col, y, line[j], COLOR_COMMENT);
+                col++;
+            }
+            break;
+        }
+
+        if (current_char == '"')
+        {
+            int string_start = i;
+            int string_end = i;
+
+            for (int j = i + 1; line[j]; j++)
+            {
+                if (line[j] == '"')
+                {
+                    string_end = j;
+                    break;
+                }
+            }
+
+            if (string_end > string_start)
+            {
+                for (int j = i; j <= string_end && col < 77; j++)
+                {
+                    write_char_at(col, y, line[j], COLOR_STRING);
+                    col++;
+                }
+                i = string_end + 1;
+                continue;
+            }
+            else
+            {
+                write_char_at(col, y, current_char, COLOR_NORMAL);
+                col++;
+                i++;
+                continue;
+            }
+        }
+
+        if ((current_char >= 'a' && current_char <= 'z') ||
+            (current_char >= 'A' && current_char <= 'Z'))
+        {
+            char word[32];
+            int word_len = 0;
+            int word_start = i;
+
+            while ((line[i] >= 'a' && line[i] <= 'z') ||
+                   (line[i] >= 'A' && line[i] <= 'Z') ||
+                   (line[i] >= '0' && line[i] <= '9') ||
+                   line[i] == '_')
+            {
+                if (word_len < 31)
+                {
+                    word[word_len++] = line[i];
+                }
+                i++;
+            }
+            word[word_len] = '\0';
+
+            uint8_t color = COLOR_NORMAL;
+
+            if (strcmp(word, "write") == 0 || strcmp(word, "line") == 0 ||
+                strcmp(word, "input") == 0 || strcmp(word, "echo") == 0)
+            {
+                color = COLOR_FUNCTION;
+            }
+
+            else if (strcmp(word, "int") == 0 || strcmp(word, "INT") == 0 ||
+                     strcmp(word, "schar") == 0 || strcmp(word, "SCHAR") == 0)
+            {
+                color = COLOR_VARIABLE;
+            }
+
+            else if (strcmp(word, "if") == 0 || strcmp(word, "IF") == 0 ||
+                     strcmp(word, "else") == 0 || strcmp(word, "ELSE") == 0 ||
+                     strcmp(word, "elif") == 0 || strcmp(word, "ELIF") == 0 ||
+                     strcmp(word, "then") == 0 || strcmp(word, "THEN") == 0 ||
+                     strcmp(word, "for") == 0 || strcmp(word, "FOR") == 0 ||
+                     strcmp(word, "while") == 0 || strcmp(word, "WHILE") == 0 ||
+                     strcmp(word, "do") == 0 || strcmp(word, "DO") == 0)
+            {
+                color = COLOR_KEYWORD;
+            }
+
+            for (int j = 0; j < word_len && col < 77; j++)
+            {
+                write_char_at(col, y, word[j], color);
+                col++;
+            }
+
+            continue;
+        }
+
+        if (current_char == '+' || current_char == '-' ||
+            current_char == '*' || current_char == '/' ||
+            current_char == '=' || current_char == '<' ||
+            current_char == '>' || current_char == '!' ||
+            current_char == '%' || current_char == '&')
+        {
+
+            write_char_at(col, y, current_char, COLOR_OPERATION);
+            col++;
+            i++;
+            continue;
+        }
+
+        write_char_at(col, y, current_char, COLOR_NORMAL);
+        col++;
+        i++;
+    }
+}
+
 void draw_editor(void)
 {
     clear_screen();
@@ -275,7 +411,6 @@ void draw_editor(void)
     write_at(4, 1, "T84 IDE - ", 0x1F);
     write_at(14, 1, editor.filename, 0x1F);
 
-    
     for (int i = 0; i < IDE_HEIGHT; i++)
     {
         int line_y = i + 2;
@@ -302,9 +437,9 @@ void draw_editor(void)
 
         if (file_line < editor.line_count)
         {
-            write_at(8, line_y, editor.lines[file_line], 0x07);
 
-            
+            draw_line_with_highlight(8, line_y, editor.lines[file_line], file_line);
+
             if (file_line == editor.cursor_line)
             {
                 write_char_at(8 + editor.cursor_col, line_y, '_', 0x0F);
@@ -314,7 +449,7 @@ void draw_editor(void)
 
     write_at(4, IDE_HEIGHT + 3, "ESC:Exit  ENTER:NewLine  CTRL+S:Save  BACKSPACE:Delete", 0x1F);
 
-    char status[60]; 
+    char status[60];
     str_copy(status, "Line: ");
 
     char line_num[4];
@@ -347,7 +482,6 @@ void draw_editor(void)
     }
     str_copy(status + str_len(status), col_num);
 
-    
     str_copy(status + str_len(status), " [");
 
     char scroll_info[10];
@@ -359,7 +493,6 @@ void draw_editor(void)
     {
         char scroll_start[4], scroll_end[4];
 
-        
         if (editor.scroll_offset + 1 < 10)
         {
             scroll_start[0] = '0' + (editor.scroll_offset + 1);
@@ -372,7 +505,6 @@ void draw_editor(void)
             scroll_start[2] = '\0';
         }
 
-        
         int last_visible = editor.scroll_offset + IDE_HEIGHT;
         if (last_visible > editor.line_count)
             last_visible = editor.line_count;
@@ -541,12 +673,12 @@ void new_line(void)
     editor.cursor_line++;
     editor.cursor_col = 0;
     editor.modified = true;
-    
-    
-    if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT) {
+
+    if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT)
+    {
         editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
     }
-    
+
     draw_editor();
 }
 
@@ -647,7 +779,6 @@ void handle_scancode(uint8_t scancode)
                 {
                     editor.cursor_line--;
 
-                    
                     if (editor.cursor_line < editor.scroll_offset)
                     {
                         editor.scroll_offset = editor.cursor_line;
@@ -666,7 +797,6 @@ void handle_scancode(uint8_t scancode)
                 {
                     editor.cursor_line++;
 
-                    
                     if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT)
                     {
                         editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
@@ -690,7 +820,6 @@ void handle_scancode(uint8_t scancode)
                     editor.cursor_line--;
                     editor.cursor_col = str_len(editor.lines[editor.cursor_line]);
 
-                    
                     if (editor.cursor_line < editor.scroll_offset)
                     {
                         editor.scroll_offset = editor.cursor_line;
@@ -708,7 +837,6 @@ void handle_scancode(uint8_t scancode)
                     editor.cursor_line++;
                     editor.cursor_col = 0;
 
-                    
                     if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT)
                     {
                         editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
@@ -745,24 +873,40 @@ void handle_scancode(uint8_t scancode)
     case KEY_ESC:
         if (editor.modified)
         {
-            write_at(4, IDE_HEIGHT + 5, "Save changes? (Y/N): ", 0x0C);
-            draw_editor();
 
-            while (1)
+            int saved_cursor_line = editor.cursor_line;
+            int saved_cursor_col = editor.cursor_col;
+
+            write_at(4, IDE_HEIGHT + 5, "Save changes? (Y/N/ESC): ", 0x0C);
+
+            bool got_response = false;
+            while (!got_response)
             {
-                uint8_t resp = get_key_scancode();
-                if (!(resp & 0x80))
+                if (keyboard_available())
                 {
-                    if (resp == 0x15)
+                    uint8_t resp = get_key_scancode();
+                    if (!(resp & 0x80))
                     {
-                        save_file();
-                        editor.should_exit = true;
-                        break;
-                    }
-                    else if (resp == 0x31)
-                    {
-                        editor.should_exit = true;
-                        break;
+                        if (resp == 0x15)
+                        {
+                            save_file();
+                            editor.should_exit = true;
+                            got_response = true;
+                        }
+                        else if (resp == 0x31)
+                        {
+                            editor.should_exit = true;
+                            got_response = true;
+                        }
+                        else if (resp == KEY_ESC)
+                        {
+                            write_at(4, IDE_HEIGHT + 5, "                         ", 0x07);
+
+                            editor.cursor_line = saved_cursor_line;
+                            editor.cursor_col = saved_cursor_col;
+                            draw_editor();
+                            got_response = true;
+                        }
                     }
                 }
             }
@@ -771,7 +915,6 @@ void handle_scancode(uint8_t scancode)
         {
             editor.should_exit = true;
         }
-        cmd_clear(1);
         break;
 
     case KEY_ENTER:
@@ -942,21 +1085,35 @@ void cmd_open_ide(const char *args)
 {
     if (!args || args[0] == '\0')
     {
-        terminal_writestring("Usage: open 4ide <filename>\n");
+        terminal_writestring("Usage: open 4ide <filename>  OR  code <filename>\n");
         return;
     }
 
+    const char *filename = NULL;
+
     const char *prefix = "4ide ";
+    bool is_4ide_format = true;
+
     for (int i = 0; i < 5; i++)
     {
         if (args[i] != prefix[i])
         {
-            terminal_writestring("Usage: open 4ide <filename>\n");
-            return;
+            is_4ide_format = false;
+            break;
         }
     }
 
-    const char *filename = args + 5;
+    if (is_4ide_format)
+    {
+
+        filename = args + 5;
+    }
+    else
+    {
+
+        filename = args;
+    }
+
     if (filename[0] == '\0')
     {
         terminal_writestring("Error: Missing filename\n");
@@ -964,6 +1121,7 @@ void cmd_open_ide(const char *args)
     }
 
     terminal_writestring("\nOpening T84 IDE...\n");
+    terminal_writeall("File: %s\n", filename);
 
     for (volatile int i = 0; i < 1000000; i++)
         ;
