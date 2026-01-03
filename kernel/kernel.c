@@ -23,6 +23,7 @@ static int history_index = -1;
 static char current_line[256];
 static bool shift_pressed = false;
 static bool ctrl_pressed = false;
+static bool ctrl_waiting = false;
 
 static char clipboard[256] = "";
 static bool clipboard_has_content = false;
@@ -1426,19 +1427,19 @@ void kernel_main(void)
 
                 if (scancode == 0x1D)
                 {
-                    ctrl_pressed = true;
+                    ctrl_waiting = true;
                     continue;
                 }
 
-                if (scancode == (0x1D | 0x80))
+                if (scancode == (0x80 | 0x1D))
                 {
+                    ctrl_waiting = false;
                     ctrl_pressed = false;
                     continue;
                 }
 
-                if (ctrl_pressed && scancode == 0x26)
+                if (ctrl_waiting && scancode == 0x26)
                 {
-
                     terminal_putchar(8);
                     terminal_putchar(' ');
                     terminal_putchar(8);
@@ -1460,13 +1461,16 @@ void kernel_main(void)
                     history_index = -1;
                     current_line[0] = '\0';
                     shift_pressed = false;
+
                     ctrl_pressed = false;
+                    ctrl_waiting = false;
 
                     continue;
                 }
 
-                if (ctrl_pressed && scancode == 0x2E)
+                if (ctrl_waiting && scancode == 0x2E)
                 {
+                    ctrl_pressed = true;
 
                     if (pos > 0)
                     {
@@ -1485,14 +1489,19 @@ void kernel_main(void)
                         }
                         terminal_putchar('_');
                     }
+
+                    ctrl_pressed = false;
+                    ctrl_waiting = false;
+
                     continue;
                 }
 
-                if (ctrl_pressed && scancode == 0x2F)
+                if (ctrl_waiting && scancode == 0x2F)
                 {
+                    ctrl_pressed = true;
+
                     if (clipboard_has_content)
                     {
-
                         terminal_putchar(8);
                         terminal_putchar(' ');
                         terminal_putchar(8);
@@ -1511,12 +1520,10 @@ void kernel_main(void)
 
                         terminal_putchar('_');
                     }
-                    continue;
-                }
 
-                if (scancode == (0x1D | 0x80))
-                {
                     ctrl_pressed = false;
+                    ctrl_waiting = false;
+
                     continue;
                 }
 
