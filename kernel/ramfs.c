@@ -73,6 +73,55 @@ void fs_init(void)
         user->child = hello;
     }
 
+    File *calc = create_file("Calculator.T", 'F');
+    if (calc)
+    {
+        const char *calc_content = 
+            "# T84 Calculator - Interactive Calculator\n"
+            "# Usage: tlang Calculator.T\n"
+            "\n"
+            "int n1 = 0\n"
+            "int n2 = 0\n"
+            "schar op = \"\"\n"
+            "line()\n"
+            "write(\"== Welcome to the T84 Calculator ==\")\n"
+            "line()\n"
+            "write(\"Type the first number: \")\n"
+            "input(n1)\n"
+            "write(\"Type the second number: \")\n"
+            "input(n2)\n"
+            "write(\"Type the operation (+, -, *, /): \")\n"
+            "input(op)\n"
+            "if op == \"+\":\n"
+            "    line()\n"
+            "    write(\"Result: \", n1 + n2)\n"
+            "elif op == \"-\":\n"
+            "    line()\n"
+            "    write(\"Result: \", n1 - n2)\n"
+            "elif op == \"*\":\n"
+            "    line()\n"
+            "    write(\"Result: \", n1 * n2)\n"
+            "elif op == \"/\":\n"
+            "    line()\n"
+            "    write(\"Result: \", n1 / n2)\n"
+            "line()\n"
+            "write(\"Thank you for using T84 Calculator!\")\n"
+            "line()\n";
+
+        int i = 0;
+        while (calc_content[i] && i < 1023)
+        {
+            calc->content[i] = calc_content[i];
+            i++;
+        }
+        calc->content[i] = '\0';
+        calc->size = i;
+
+        calc->parent = user;
+        calc->next = user->child;
+        user->child = calc;
+    }
+
     current_dir = user;
 }
 
