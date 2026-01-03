@@ -43,6 +43,7 @@ typedef struct
     bool ctrl_pressed;
     bool shift_pressed;
     bool caps_lock;
+    bool insert_mode;
 } IDE_Editor;
 
 static IDE_Editor editor;
@@ -64,6 +65,33 @@ static void str_copy(char *dest, const char *src)
         i++;
     }
     dest[i] = '\0';
+}
+
+void overwrite_char(char c)
+{
+    if (editor.cursor_line >= editor.line_count)
+        return;
+
+    char *line = editor.lines[editor.cursor_line];
+    int len = str_len(line);
+
+    if (editor.cursor_col < len)
+    {
+
+        line[editor.cursor_col] = c;
+    }
+    else
+    {
+
+        if (len < MAX_LINE_LEN - 1)
+        {
+            line[len] = c;
+            line[len + 1] = '\0';
+        }
+    }
+
+    editor.cursor_col++;
+    editor.modified = true;
 }
 
 static uint8_t read_scancode(void)
@@ -322,6 +350,10 @@ void draw_editor(void)
         str_copy(status + str_len(status), "[SHIFT]");
     if (editor.caps_lock)
         str_copy(status + str_len(status), "[CAPS]");
+    if (editor.insert_mode)
+        str_copy(status + str_len(status), "[INS]");
+    else
+        str_copy(status + str_len(status), "[OVR]");
 
     write_at(4, IDE_HEIGHT + 4, status, 0x1F);
 }
@@ -511,6 +543,85 @@ static char scancode_to_char(uint8_t scancode, bool shift_pressed, bool caps_loc
 
 void handle_scancode(uint8_t scancode)
 {
+    static bool got_e0 = false;
+
+    if (scancode == 0xE0)
+    {
+        got_e0 = true;
+        return;
+    }
+
+    if (got_e0)
+    {
+        got_e0 = false;
+
+        if (!(scancode & 0x80))
+        {
+            int old_line = editor.cursor_line;
+            int old_col = editor.cursor_col;
+
+            switch (scancode)
+            {
+            case KEY_UP:
+                if (editor.cursor_line > 0)
+                {
+                    editor.cursor_line--;
+
+                    int line_len = str_len(editor.lines[editor.cursor_line]);
+                    if (editor.cursor_col > line_len)
+                    {
+                        editor.cursor_col = line_len;
+                    }
+                }
+                break;
+
+            case KEY_DOWN:
+                if (editor.cursor_line < editor.line_count - 1)
+                {
+                    editor.cursor_line++;
+
+                    int line_len = str_len(editor.lines[editor.cursor_line]);
+                    if (editor.cursor_col > line_len)
+                    {
+                        editor.cursor_col = line_len;
+                    }
+                }
+                break;
+
+            case KEY_LEFT:
+                if (editor.cursor_col > 0)
+                {
+                    editor.cursor_col--;
+                }
+                else if (editor.cursor_line > 0)
+                {
+
+                    editor.cursor_line--;
+                    editor.cursor_col = str_len(editor.lines[editor.cursor_line]);
+                }
+                break;
+
+            case KEY_RIGHT:
+                if (editor.cursor_col < str_len(editor.lines[editor.cursor_line]))
+                {
+                    editor.cursor_col++;
+                }
+                else if (editor.cursor_line < editor.line_count - 1)
+                {
+
+                    editor.cursor_line++;
+                    editor.cursor_col = 0;
+                }
+                break;
+            }
+
+            if (editor.cursor_line != old_line || editor.cursor_col != old_col)
+            {
+                draw_editor();
+            }
+        }
+        return;
+    }
 
     if (scancode & 0x80)
     {
@@ -592,7 +703,6 @@ void handle_scancode(uint8_t scancode)
 
             if (len > 0)
             {
-
                 int copy_len = (len < 255) ? len : 255;
                 for (int i = 0; i < copy_len; i++)
                 {
@@ -602,7 +712,6 @@ void handle_scancode(uint8_t scancode)
                 ide_clipboard_has_content = true;
 
                 write_at(4, IDE_HEIGHT + 5, "Line copied to clipboard!", 0x0A);
-
                 for (volatile int i = 0; i < 200000; i++)
                     ;
                 write_at(4, IDE_HEIGHT + 5, "                         ", 0x07);
@@ -623,16 +732,15 @@ void handle_scancode(uint8_t scancode)
     case 0x2F:
         if (editor.ctrl_pressed)
         {
+
             if (ide_clipboard_has_content)
             {
-
                 for (int i = 0; ide_clipboard[i]; i++)
                 {
                     insert_char(ide_clipboard[i]);
                 }
 
                 write_at(4, IDE_HEIGHT + 5, "Pasted from clipboard!", 0x0A);
-
                 for (volatile int i = 0; i < 200000; i++)
                     ;
                 write_at(4, IDE_HEIGHT + 5, "                       ", 0x07);
@@ -669,49 +777,10 @@ void handle_scancode(uint8_t scancode)
         }
         else
         {
-
             char c = scancode_to_char(scancode, editor.shift_pressed, editor.caps_lock);
             if (c)
             {
                 insert_char(c);
-                draw_editor();
-            }
-        }
-        break;
-
-    case 0xE0:
-
-        while (!keyboard_available())
-            ;
-        uint8_t ext_scancode = get_key_scancode();
-
-        if (!(ext_scancode & 0x80))
-        {
-            int old_line = editor.cursor_line;
-            int old_col = editor.cursor_col;
-
-            switch (ext_scancode)
-            {
-            case KEY_UP:
-                if (editor.cursor_line > 0)
-                    editor.cursor_line--;
-                break;
-            case KEY_DOWN:
-                if (editor.cursor_line < editor.line_count - 1)
-                    editor.cursor_line++;
-                break;
-            case KEY_LEFT:
-                if (editor.cursor_col > 0)
-                    editor.cursor_col--;
-                break;
-            case KEY_RIGHT:
-                if (editor.cursor_col < str_len(editor.lines[editor.cursor_line]))
-                    editor.cursor_col++;
-                break;
-            }
-
-            if (editor.cursor_line != old_line || editor.cursor_col != old_col)
-            {
                 draw_editor();
             }
         }
