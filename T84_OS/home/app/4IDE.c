@@ -44,6 +44,7 @@ typedef struct
     bool shift_pressed;
     bool caps_lock;
     bool insert_mode;
+    int scroll_offset;
 } IDE_Editor;
 
 static IDE_Editor editor;
@@ -162,6 +163,7 @@ void ide_open_file(const char *filename)
     editor.ctrl_pressed = false;
     editor.shift_pressed = false;
     editor.caps_lock = false;
+    editor.scroll_offset = 0;
 
     for (int i = 0; i < MAX_LINES; i++)
     {
@@ -273,34 +275,37 @@ void draw_editor(void)
     write_at(4, 1, "T84 IDE - ", 0x1F);
     write_at(14, 1, editor.filename, 0x1F);
 
+    
     for (int i = 0; i < IDE_HEIGHT; i++)
     {
         int line_y = i + 2;
+        int file_line = i + editor.scroll_offset;
 
         char line_num[6];
-        if (i + 1 < 10)
+        if (file_line + 1 < 10)
         {
             line_num[0] = ' ';
-            line_num[1] = '0' + (i + 1);
+            line_num[1] = '0' + (file_line + 1);
             line_num[2] = ' ';
             line_num[3] = ' ';
             line_num[4] = '\0';
         }
         else
         {
-            line_num[0] = '0' + ((i + 1) / 10);
-            line_num[1] = '0' + ((i + 1) % 10);
+            line_num[0] = '0' + ((file_line + 1) / 10);
+            line_num[1] = '0' + ((file_line + 1) % 10);
             line_num[2] = ' ';
             line_num[3] = ' ';
             line_num[4] = '\0';
         }
         write_at(4, line_y, line_num, 0x0B);
 
-        if (i < editor.line_count)
+        if (file_line < editor.line_count)
         {
-            write_at(8, line_y, editor.lines[i], 0x07);
+            write_at(8, line_y, editor.lines[file_line], 0x07);
 
-            if (i == editor.cursor_line)
+            
+            if (file_line == editor.cursor_line)
             {
                 write_char_at(8 + editor.cursor_col, line_y, '_', 0x0F);
             }
@@ -309,7 +314,7 @@ void draw_editor(void)
 
     write_at(4, IDE_HEIGHT + 3, "ESC:Exit  ENTER:NewLine  CTRL+S:Save  BACKSPACE:Delete", 0x1F);
 
-    char status[50];
+    char status[60]; 
     str_copy(status, "Line: ");
 
     char line_num[4];
@@ -342,7 +347,75 @@ void draw_editor(void)
     }
     str_copy(status + str_len(status), col_num);
 
-    str_copy(status + str_len(status), " ");
+    
+    str_copy(status + str_len(status), " [");
+
+    char scroll_info[10];
+    if (editor.line_count <= IDE_HEIGHT)
+    {
+        str_copy(scroll_info, "ALL");
+    }
+    else
+    {
+        char scroll_start[4], scroll_end[4];
+
+        
+        if (editor.scroll_offset + 1 < 10)
+        {
+            scroll_start[0] = '0' + (editor.scroll_offset + 1);
+            scroll_start[1] = '\0';
+        }
+        else
+        {
+            scroll_start[0] = '0' + ((editor.scroll_offset + 1) / 10);
+            scroll_start[1] = '0' + ((editor.scroll_offset + 1) % 10);
+            scroll_start[2] = '\0';
+        }
+
+        
+        int last_visible = editor.scroll_offset + IDE_HEIGHT;
+        if (last_visible > editor.line_count)
+            last_visible = editor.line_count;
+
+        if (last_visible < 10)
+        {
+            scroll_end[0] = '0' + last_visible;
+            scroll_end[1] = '\0';
+        }
+        else
+        {
+            scroll_end[0] = '0' + (last_visible / 10);
+            scroll_end[1] = '0' + (last_visible % 10);
+            scroll_end[2] = '\0';
+        }
+
+        str_copy(scroll_info, scroll_start);
+        str_copy(scroll_info + str_len(scroll_info), "-");
+        str_copy(scroll_info + str_len(scroll_info), scroll_end);
+    }
+
+    str_copy(status + str_len(status), scroll_info);
+    str_copy(status + str_len(status), "/");
+
+    char total_lines[6];
+    if (editor.line_count < 10)
+    {
+        total_lines[0] = '0' + editor.line_count;
+        total_lines[1] = '\0';
+    }
+    else if (editor.line_count < 100)
+    {
+        total_lines[0] = '0' + (editor.line_count / 10);
+        total_lines[1] = '0' + (editor.line_count % 10);
+        total_lines[2] = '\0';
+    }
+    else
+    {
+        str_copy(total_lines, "99+");
+    }
+    str_copy(status + str_len(status), total_lines);
+    str_copy(status + str_len(status), "] ");
+
     str_copy(status + str_len(status), editor.modified ? "[MODIFIED]" : "[SAVED]");
 
     str_copy(status + str_len(status), " ");
@@ -468,6 +541,13 @@ void new_line(void)
     editor.cursor_line++;
     editor.cursor_col = 0;
     editor.modified = true;
+    
+    
+    if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT) {
+        editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
+    }
+    
+    draw_editor();
 }
 
 void save_file(void)
@@ -567,6 +647,12 @@ void handle_scancode(uint8_t scancode)
                 {
                     editor.cursor_line--;
 
+                    
+                    if (editor.cursor_line < editor.scroll_offset)
+                    {
+                        editor.scroll_offset = editor.cursor_line;
+                    }
+
                     int line_len = str_len(editor.lines[editor.cursor_line]);
                     if (editor.cursor_col > line_len)
                     {
@@ -579,6 +665,12 @@ void handle_scancode(uint8_t scancode)
                 if (editor.cursor_line < editor.line_count - 1)
                 {
                     editor.cursor_line++;
+
+                    
+                    if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT)
+                    {
+                        editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
+                    }
 
                     int line_len = str_len(editor.lines[editor.cursor_line]);
                     if (editor.cursor_col > line_len)
@@ -595,9 +687,14 @@ void handle_scancode(uint8_t scancode)
                 }
                 else if (editor.cursor_line > 0)
                 {
-
                     editor.cursor_line--;
                     editor.cursor_col = str_len(editor.lines[editor.cursor_line]);
+
+                    
+                    if (editor.cursor_line < editor.scroll_offset)
+                    {
+                        editor.scroll_offset = editor.cursor_line;
+                    }
                 }
                 break;
 
@@ -608,9 +705,14 @@ void handle_scancode(uint8_t scancode)
                 }
                 else if (editor.cursor_line < editor.line_count - 1)
                 {
-
                     editor.cursor_line++;
                     editor.cursor_col = 0;
+
+                    
+                    if (editor.cursor_line >= editor.scroll_offset + IDE_HEIGHT)
+                    {
+                        editor.scroll_offset = editor.cursor_line - IDE_HEIGHT + 1;
+                    }
                 }
                 break;
             }
