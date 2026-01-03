@@ -1,6 +1,5 @@
 #include "isr.h"
 #include "keyboard.h"
-#include "mouse.h"
 #include "vga.h"
 #include "string_utils.h"
 

@@ -28,6 +28,9 @@
 
 #define KEY_TAB 0x0F
 
+static char ide_clipboard[256] = "";
+static bool ide_clipboard_has_content = false;
+
 typedef struct
 {
     char filename[32];
@@ -578,6 +581,75 @@ void handle_scancode(uint8_t scancode)
 
     case KEY_LCTRL:
         editor.ctrl_pressed = true;
+        break;
+
+    case 0x2E:
+        if (editor.ctrl_pressed)
+        {
+
+            char *current_line = editor.lines[editor.cursor_line];
+            int len = str_len(current_line);
+
+            if (len > 0)
+            {
+
+                int copy_len = (len < 255) ? len : 255;
+                for (int i = 0; i < copy_len; i++)
+                {
+                    ide_clipboard[i] = current_line[i];
+                }
+                ide_clipboard[copy_len] = '\0';
+                ide_clipboard_has_content = true;
+
+                write_at(4, IDE_HEIGHT + 5, "Line copied to clipboard!", 0x0A);
+
+                for (volatile int i = 0; i < 200000; i++)
+                    ;
+                write_at(4, IDE_HEIGHT + 5, "                         ", 0x07);
+            }
+        }
+        else
+        {
+
+            char c = scancode_to_char(scancode, editor.shift_pressed, editor.caps_lock);
+            if (c)
+            {
+                insert_char(c);
+                draw_editor();
+            }
+        }
+        break;
+
+    case 0x2F:
+        if (editor.ctrl_pressed)
+        {
+            if (ide_clipboard_has_content)
+            {
+
+                for (int i = 0; ide_clipboard[i]; i++)
+                {
+                    insert_char(ide_clipboard[i]);
+                }
+
+                write_at(4, IDE_HEIGHT + 5, "Pasted from clipboard!", 0x0A);
+
+                for (volatile int i = 0; i < 200000; i++)
+                    ;
+                write_at(4, IDE_HEIGHT + 5, "                       ", 0x07);
+
+                draw_editor();
+            }
+        }
+        else
+        {
+
+            char c = scancode_to_char(scancode, editor.shift_pressed, editor.caps_lock);
+            if (c)
+            {
+                insert_char(c);
+                draw_editor();
+            }
+        }
         break;
 
     case KEY_LSHIFT:

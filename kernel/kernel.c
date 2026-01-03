@@ -22,6 +22,10 @@ static int history_count = 0;
 static int history_index = -1;
 static char current_line[256];
 static bool shift_pressed = false;
+static bool ctrl_pressed = false;
+
+static char clipboard[256] = "";
+static bool clipboard_has_content = false;
 
 char input[256];
 int pos = 0;
@@ -1417,6 +1421,102 @@ void kernel_main(void)
                 if (scancode == 0x2A || scancode == 0x36)
                 {
                     shift_pressed = true;
+                    continue;
+                }
+
+                if (scancode == 0x1D)
+                {
+                    ctrl_pressed = true;
+                    continue;
+                }
+
+                if (scancode == (0x1D | 0x80))
+                {
+                    ctrl_pressed = false;
+                    continue;
+                }
+
+                if (ctrl_pressed && scancode == 0x26)
+                {
+
+                    terminal_putchar(8);
+                    terminal_putchar(' ');
+                    terminal_putchar(8);
+
+                    for (int i = 0; i < pos; i++)
+                    {
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+                    }
+
+                    cmd_clear(1);
+
+                    terminal_setcolor(text_color);
+                    terminal_writestring("T84> _");
+
+                    pos = 0;
+                    input[0] = '\0';
+                    history_index = -1;
+                    current_line[0] = '\0';
+                    shift_pressed = false;
+                    ctrl_pressed = false;
+
+                    continue;
+                }
+
+                if (ctrl_pressed && scancode == 0x2E)
+                {
+
+                    if (pos > 0)
+                    {
+                        strcpy(clipboard, input);
+                        clipboard_has_content = true;
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        terminal_writestring(" [Copied]");
+
+                        for (int i = 0; i < 9; i++)
+                        {
+                            terminal_putchar(8);
+                        }
+                        terminal_putchar('_');
+                    }
+                    continue;
+                }
+
+                if (ctrl_pressed && scancode == 0x2F)
+                {
+                    if (clipboard_has_content)
+                    {
+
+                        terminal_putchar(8);
+                        terminal_putchar(' ');
+                        terminal_putchar(8);
+
+                        for (int i = 0; i < pos; i++)
+                        {
+                            terminal_putchar(8);
+                            terminal_putchar(' ');
+                            terminal_putchar(8);
+                        }
+
+                        strcpy(input, clipboard);
+                        pos = strlen(clipboard);
+
+                        terminal_writestring(input);
+
+                        terminal_putchar('_');
+                    }
+                    continue;
+                }
+
+                if (scancode == (0x1D | 0x80))
+                {
+                    ctrl_pressed = false;
                     continue;
                 }
 
