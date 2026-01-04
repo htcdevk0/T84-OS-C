@@ -6,10 +6,95 @@
 #include "stddef.h"
 #include <stdbool.h>
 
+#define COLOR_WARNING 0x0C
+#define COLOR_ERROR 0x0C
+#define COLOR_INFO 0x0B
+
 bool keyboard_available(void);
 char keyboard_getchar(void);
 
 static TLANG_Interpreter interpreter;
+
+static void tlang_error(const char *msg);
+static void tlang_warning(const char *msg);
+static bool is_whitespace(char c);
+static void skip_whitespace(const char **ptr);
+static bool is_digit(char c);
+static bool is_alpha(char c);
+static bool is_alnum(char c);
+static int simple_atoi(const char *str);
+static char *simple_strstr(const char *haystack, const char *needle);
+
+static TLANG_Variable *find_variable(const char *name);
+static TLANG_Variable *create_variable(const char *name, TLANG_Type type);
+
+static int parse_int_expression(const char **ptr);
+static char *parse_string_literal(const char **ptr);
+static bool parse_bool_literal(const char **ptr);
+static void process_line_command(const char **ptr);
+static int evaluate_math_expression(const char **ptr);
+static bool evaluate_condition(const char **ptr);
+
+static void process_int_declaration(const char **ptr);
+static void process_schar_declaration(const char **ptr);
+static void process_bool_declaration(const char **ptr);
+static void process_write_command(const char **ptr);
+static void process_input_command(const char **ptr);
+static void process_if_statement(const char **ptr, bool *condition_met);
+static void process_for_loop(const char **ptr);
+
+static uint32_t rng_next(void);
+static int random_int(int min, int max);
+static void process_seed_command(const char **ptr);
+static void process_random_command(const char **ptr);
+
+void tlang_run_line(const char *line);
+
+static uint32_t rng_state = 123456789;
+
+static uint32_t rng_next(void)
+{
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 17;
+    rng_state ^= rng_state << 5;
+    return rng_state;
+}
+
+static void process_seed_command(const char **ptr)
+{
+    skip_whitespace(ptr);
+
+    if (**ptr != '(')
+    {
+        tlang_error("Expected '(' after seed");
+        return;
+    }
+
+    (*ptr)++;
+    skip_whitespace(ptr);
+
+    int seed_value = parse_int_expression(ptr);
+
+    skip_whitespace(ptr);
+
+    if (**ptr != ')')
+    {
+        tlang_error("Expected ')' after seed");
+        return;
+    }
+
+    (*ptr)++;
+
+    rng_state = (seed_value == 0) ? 123456789 : (uint32_t)seed_value;
+}
+
+static int random_int(int min, int max)
+{
+    if (min >= max)
+        return min;
+    uint32_t range = max - min + 1;
+    return min + (rng_next() % range);
+}
 
 static void tlang_error(const char *msg)
 {
@@ -17,6 +102,201 @@ static void tlang_error(const char *msg)
     terminal_writestring(msg);
     terminal_writestring("\n");
     interpreter.had_error = true;
+}
+
+static void process_random_command(const char **ptr)
+{
+    skip_whitespace(ptr);
+
+    if (**ptr != '(')
+    {
+        tlang_error("Expected '(' after random");
+        return;
+    }
+
+    (*ptr)++;
+    skip_whitespace(ptr);
+
+    if (**ptr == '"')
+    {
+
+        char *strings[20];
+        int string_count = 0;
+
+        while (**ptr && **ptr != ')')
+        {
+            skip_whitespace(ptr);
+
+            if (**ptr == '"')
+            {
+
+                char *str = parse_string_literal(ptr);
+                if (!str)
+                {
+                    tlang_error("Invalid string in random");
+                    return;
+                }
+
+                if (string_count < 20)
+                {
+
+                    static char string_buffer[20][256];
+                    strcpy(string_buffer[string_count], str);
+                    strings[string_count] = string_buffer[string_count];
+                    string_count++;
+                }
+                else
+                {
+                    tlang_error("Too many strings in random (max 20)");
+                    return;
+                }
+            }
+            else if (**ptr == ',')
+            {
+                (*ptr)++;
+                skip_whitespace(ptr);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        skip_whitespace(ptr);
+        if (**ptr != ',')
+        {
+            tlang_error("Expected ',' before variable name");
+            return;
+        }
+
+        (*ptr)++;
+        skip_whitespace(ptr);
+
+        char var_name[32];
+        int i = 0;
+        while (is_alnum(**ptr) && i < 31)
+        {
+            var_name[i++] = **ptr;
+            (*ptr)++;
+        }
+        var_name[i] = '\0';
+
+        skip_whitespace(ptr);
+        if (**ptr != ')')
+        {
+            tlang_error("Expected ')' after random");
+            return;
+        }
+        (*ptr)++;
+
+        TLANG_Variable *var = find_variable(var_name);
+        if (!var)
+        {
+
+            var = create_variable(var_name, TLANG_SCHAR);
+        }
+
+        if (!var)
+        {
+            tlang_error("Failed to create/find variable");
+            return;
+        }
+
+        if (string_count > 0)
+        {
+            int index = random_int(0, string_count - 1);
+
+            if (var->type != TLANG_SCHAR)
+            {
+                tlang_error("Target variable must be string (schar) for string random");
+                return;
+            }
+
+            static char result_buffer[256];
+            strcpy(result_buffer, strings[index]);
+            var->value.str_value = result_buffer;
+        }
+        else
+        {
+            tlang_error("No strings provided to random");
+        }
+    }
+    else
+    {
+
+        int min_value = parse_int_expression(ptr);
+
+        skip_whitespace(ptr);
+
+        bool use_arrow = false;
+        if (**ptr == '-' && *(*ptr + 1) == '>')
+        {
+            use_arrow = true;
+            (*ptr) += 2;
+        }
+        else if (**ptr == ',')
+        {
+            (*ptr)++;
+        }
+        else
+        {
+            tlang_error("Expected '->' or ',' in random");
+            return;
+        }
+
+        skip_whitespace(ptr);
+
+        int max_value = parse_int_expression(ptr);
+
+        skip_whitespace(ptr);
+
+        if (**ptr != ',')
+        {
+            tlang_error("Expected ',' before variable name");
+            return;
+        }
+
+        (*ptr)++;
+        skip_whitespace(ptr);
+
+        char var_name[32];
+        int i = 0;
+        while (is_alnum(**ptr) && i < 31)
+        {
+            var_name[i++] = **ptr;
+            (*ptr)++;
+        }
+        var_name[i] = '\0';
+
+        skip_whitespace(ptr);
+        if (**ptr != ')')
+        {
+            tlang_error("Expected ')' after random");
+            return;
+        }
+        (*ptr)++;
+
+        TLANG_Variable *var = find_variable(var_name);
+        if (!var)
+        {
+
+            var = create_variable(var_name, TLANG_INT);
+        }
+
+        if (!var)
+        {
+            tlang_error("Failed to create/find variable");
+            return;
+        }
+
+        if (var->type != TLANG_INT)
+        {
+            tlang_error("Target variable must be integer for number random");
+            return;
+        }
+
+        var->value.int_value = random_int(min_value, max_value);
+    }
 }
 
 static bool is_whitespace(char c)
@@ -473,7 +753,7 @@ static bool evaluate_condition(const char **ptr)
                 int op_len = 0;
                 while (**ptr && (**ptr == '=' || **ptr == '!') && op_len < 2)
                     op[op_len++] = **ptr;
-                    (*ptr)++;
+                (*ptr)++;
 
                 if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0)
                     return left_value == right_value;
@@ -1367,6 +1647,27 @@ void tlang_run_line(const char *line)
     if (!*ptr || *ptr == '#')
         return;
 
+    if (*ptr == '@')
+    {
+        uint8_t warn_color = vga_entry_color(VGA_COLOR_RED, VGA_COLOR_LIGHT_GREY);
+        uint8_t text_color = vga_entry_color(VGA_COLOR_BLUE, VGA_COLOR_LIGHT_GREY);
+        terminal_setcolor(warn_color);
+        terminal_writestring("[WARN] ");
+
+        ptr++;
+        skip_whitespace(&ptr);
+
+        while (*ptr && *ptr != '\n' && *ptr != '\r')
+        {
+            terminal_putchar(*ptr);
+            ptr++;
+        }
+
+        terminal_writestring("\n");
+        terminal_setcolor(text_color);
+        return;
+    }
+
     static bool skip_mode = false;
     static int if_depth = 0;
     static bool else_found = false;
@@ -1394,7 +1695,6 @@ void tlang_run_line(const char *line)
         strncmp(ptr, "schar ", 6) == 0 ||
         strncmp(ptr, "bool ", 5) == 0)
     {
-
         skip_mode = false;
         if_depth = 0;
         else_found = false;
@@ -1531,6 +1831,19 @@ void tlang_run_line(const char *line)
     {
         ptr += 4;
         process_for_loop(&ptr);
+        return;
+    }
+    else if (strncmp(ptr, "random(", 7) == 0)
+    {
+        ptr += 6;
+        process_random_command(&ptr);
+        return;
+    }
+
+    else if (strncmp(ptr, "seed(", 5) == 0)
+    {
+        ptr += 4;
+        process_seed_command(&ptr);
         return;
     }
 

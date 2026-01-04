@@ -36,6 +36,8 @@
 #define COLOR_KEYWORD 0x0E
 #define COLOR_COMMENT 0x08
 #define COLOR_OPERATION 0x0C
+#define COLOR_MISC 0x0C
+#define COLOR_EXTERNAL VGA_COLOR_BLUE
 
 static char ide_clipboard[256] = "";
 static bool ide_clipboard_has_content = false;
@@ -265,6 +267,27 @@ void ide_open_file(const char *filename)
     }
 }
 
+static bool has_t_extension(const char *filename)
+{
+    if (!filename || filename[0] == '\0')
+        return false;
+
+    int len = str_len(filename);
+
+    if (len < 3)
+        return false;
+
+    const char *ext = &filename[len - 2];
+
+    if ((ext[0] == '.' && ext[1] == 'T') ||
+        (ext[0] == '.' && ext[1] == 't'))
+    {
+        return true;
+    }
+
+    return false;
+}
+
 static void draw_line_with_highlight(int x, int y, const char *line, int line_num)
 {
     int i = 0;
@@ -348,7 +371,8 @@ static void draw_line_with_highlight(int x, int y, const char *line, int line_nu
             }
 
             else if (strcmp(word, "int") == 0 || strcmp(word, "INT") == 0 ||
-                     strcmp(word, "schar") == 0 || strcmp(word, "SCHAR") == 0)
+                     strcmp(word, "schar") == 0 || strcmp(word, "SCHAR") == 0 ||
+                     strcmp(word, "bool") == 0 || strcmp(word, "BOOL") == 0)
             {
                 color = COLOR_VARIABLE;
             }
@@ -359,9 +383,15 @@ static void draw_line_with_highlight(int x, int y, const char *line, int line_nu
                      strcmp(word, "then") == 0 || strcmp(word, "THEN") == 0 ||
                      strcmp(word, "for") == 0 || strcmp(word, "FOR") == 0 ||
                      strcmp(word, "while") == 0 || strcmp(word, "WHILE") == 0 ||
-                     strcmp(word, "do") == 0 || strcmp(word, "DO") == 0)
+                     strcmp(word, "do") == 0 || strcmp(word, "DO") == 0 ||
+                     strcmp(word, "to") == 0 || strcmp(word, "TO") == 0)
             {
                 color = COLOR_KEYWORD;
+            }
+
+            else if (strcmp(word, "random") == 0)
+            {
+                color = COLOR_EXTERNAL;
             }
 
             for (int j = 0; j < word_len && col < 77; j++)
@@ -381,6 +411,14 @@ static void draw_line_with_highlight(int x, int y, const char *line, int line_nu
         {
 
             write_char_at(col, y, current_char, COLOR_OPERATION);
+            col++;
+            i++;
+            continue;
+        }
+
+        if (current_char == '@')
+        {
+            write_char_at(col, y, current_char, COLOR_MISC);
             col++;
             i++;
             continue;
@@ -438,7 +476,15 @@ void draw_editor(void)
         if (file_line < editor.line_count)
         {
 
-            draw_line_with_highlight(8, line_y, editor.lines[file_line], file_line);
+            if (has_t_extension(editor.filename))
+            {
+                draw_line_with_highlight(8, line_y, editor.lines[file_line], file_line);
+            }
+            else
+            {
+
+                write_at(8, line_y, editor.lines[file_line], 0x07);
+            }
 
             if (file_line == editor.cursor_line)
             {
@@ -559,6 +605,10 @@ void draw_editor(void)
         str_copy(status + str_len(status), "[INS]");
     else
         str_copy(status + str_len(status), "[OVR]");
+    if (has_t_extension(editor.filename))
+        str_copy(status + str_len(status), " [HL]");
+    else
+        str_copy(status + str_len(status), " [NO-HL]");
 
     write_at(4, IDE_HEIGHT + 4, status, 0x1F);
 }
